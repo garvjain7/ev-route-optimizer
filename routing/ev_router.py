@@ -3,10 +3,17 @@ import numpy as np
 from geopy.distance import geodesic
 import streamlit as st
 from utils.distance_calculator import DistanceCalculator
+from ml_models.station_predictor import StationPredictor
+from ml_models.travel_time_predictor import TravelTimePredictor
+from ml_models.adaptive_router import AdaptiveRouter
 
 class EVRouter:
     def __init__(self):
         self.distance_calc = DistanceCalculator()
+        self.station_predictor = StationPredictor()
+        self.travel_time_predictor = TravelTimePredictor()
+        self.adaptive_router = AdaptiveRouter()
+        self.adaptive_router.load_route_feedback()
     
     def optimize_route(self, source_coords, dest_coords, stations_df, ev_specs):
         """Optimize EV route with charging stops"""
@@ -105,7 +112,16 @@ class EVRouter:
                 
                 # Update route data
                 total_distance += distance_to_station
-                travel_time = distance_to_station / 80  # Assuming 80 km/h
+                
+                # Use ML model to predict travel time
+                try:
+                    predicted_travel_time = self.travel_time_predictor.predict_travel_time(
+                        current_position, station_coords
+                    )
+                    travel_time = predicted_travel_time if predicted_travel_time is not None else distance_to_station / 80
+                except Exception as e:
+                    travel_time = distance_to_station / 80  # Fallback to simple calculation
+                
                 total_time += travel_time + (ev_specs['charging_time'] / 60)  # Add charging time
                 
                 # Update battery level
@@ -153,7 +169,16 @@ class EVRouter:
             # Add final leg to destination
             final_distance = geodesic(current_position, dest_coords).kilometers
             total_distance += final_distance
-            final_travel_time = final_distance / 80
+            
+            # Use ML model for final leg travel time
+            try:
+                predicted_final_time = self.travel_time_predictor.predict_travel_time(
+                    current_position, dest_coords
+                )
+                final_travel_time = predicted_final_time if predicted_final_time is not None else final_distance / 80
+            except Exception:
+                final_travel_time = final_distance / 80
+                
             total_time += final_travel_time
             
             # Final battery level
@@ -176,6 +201,7 @@ class EVRouter:
             total_energy = (total_distance / 100) * ev_specs['consumption_rate']
             
             route_data = {
+                'route_id': f"route_{len(self.adaptive_router.route_history)}",
                 'waypoints': waypoints,
                 'charging_stops': charging_stops,
                 'statistics': {
@@ -186,7 +212,11 @@ class EVRouter:
                     'battery_used': None,  # Not applicable for multi-stop
                     'efficiency': ev_specs['consumption_rate']
                 },
-                'energy_profile': energy_profile
+                'energy_profile': energy_profile,
+                'ml_predictions': {
+                    'efficiency_score': self.adaptive_router.predict_route_efficiency(route_data) if hasattr(self.adaptive_router, 'predict_route_efficiency') else None,
+                    'recommendations': self.adaptive_router.get_adaptive_recommendations(route_data) if hasattr(self.adaptive_router, 'get_adaptive_recommendations') else []
+                }
             }
             
             return route_data
@@ -196,7 +226,7 @@ class EVRouter:
             return None
     
     def _find_optimal_charging_station(self, current_position, dest_coords, stations_df, effective_range):
-        """Find the optimal charging station for the next leg"""
+        """Find the optimal charging station using ML predictions"""
         try:
             # Calculate reachable stations from current position
             stations_df = stations_df.copy()
@@ -219,17 +249,46 @@ class EVRouter:
                 axis=1
             )
             
-            # Calculate optimization score
-            # Prefer stations that are: closer to destination, not too far from current position
-            reachable_stations['optimization_score'] = (
-                reachable_stations['distance_to_dest'] * 0.7 +  # Closer to destination is better
-                reachable_stations['distance_from_current'] * 0.3  # Not too far from current
-            )
-            
-            # Add bonus for fast charging capabilities
-            if 'dc_fast_ports' in reachable_stations.columns:
-                dc_ports = pd.to_numeric(reachable_stations['dc_fast_ports'], errors='coerce').fillna(0)
-                reachable_stations['optimization_score'] -= dc_ports * 2  # Bonus for DC fast charging
+            # Use ML model to predict optimal stations
+            try:
+                # Get ML predictions for stations
+                ml_predictions = self.station_predictor.predict_station_metrics(
+                    reachable_stations, 
+                    route_info=True, 
+                    time_info=True
+                )
+                
+                if ml_predictions is not None:
+                    # Use ML score as primary criterion
+                    reachable_stations = ml_predictions
+                    reachable_stations['optimization_score'] = (
+                        reachable_stations['distance_to_dest'] * 0.4 +  # Distance weight
+                        reachable_stations['distance_from_current'] * 0.2 +  # Current distance weight
+                        (5 - reachable_stations['ml_station_score']) * 0.4  # ML score weight (inverted)
+                    )
+                else:
+                    # Fallback to traditional scoring
+                    reachable_stations['optimization_score'] = (
+                        reachable_stations['distance_to_dest'] * 0.7 +
+                        reachable_stations['distance_from_current'] * 0.3
+                    )
+                    
+                    # Add bonus for fast charging capabilities
+                    if 'dc_fast_ports' in reachable_stations.columns:
+                        dc_ports = pd.to_numeric(reachable_stations['dc_fast_ports'], errors='coerce').fillna(0)
+                        reachable_stations['optimization_score'] -= dc_ports * 2
+                        
+            except Exception as e:
+                st.warning(f"ML prediction failed, using traditional scoring: {str(e)}")
+                # Traditional scoring as fallback
+                reachable_stations['optimization_score'] = (
+                    reachable_stations['distance_to_dest'] * 0.7 +
+                    reachable_stations['distance_from_current'] * 0.3
+                )
+                
+                if 'dc_fast_ports' in reachable_stations.columns:
+                    dc_ports = pd.to_numeric(reachable_stations['dc_fast_ports'], errors='coerce').fillna(0)
+                    reachable_stations['optimization_score'] -= dc_ports * 2
             
             # Select station with best score
             best_station = reachable_stations.loc[reachable_stations['optimization_score'].idxmin()]

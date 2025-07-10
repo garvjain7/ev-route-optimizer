@@ -14,4 +14,5 @@ dependencies = [
     "psycopg2-binary>=2.9.10",
     "sqlalchemy>=2.0.41",
     "scikit-learn>=1.7.0",
+    "joblib>=1.5.1",
 ]
