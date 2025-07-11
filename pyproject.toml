@@ -15,4 +15,5 @@ dependencies = [
     "sqlalchemy>=2.0.41",
     "scikit-learn>=1.7.0",
     "joblib>=1.5.1",
+    "flask>=3.1.1",
 ]
