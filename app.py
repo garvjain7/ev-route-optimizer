@@ -34,29 +34,40 @@ def main():
     st.title("🚗🔋 EV Routing & Charging Station Optimization Pipeline")
     st.markdown("A comprehensive pipeline for optimizing EV routes with intelligent charging station selection")
     
-    # Initialize components
-    db_conn = DatabaseConnection()
-    station_filters = StationFilters()
-    clustering_engine = ClusteringEngine()
-    ev_router = EVRouter()
-    map_visualizer = MapVisualizer()
-    geojson_exporter = GeoJSONExporter()
+    # Initialize components only when needed (lazy loading)
+    if 'components_initialized' not in st.session_state:
+        st.session_state.components_initialized = False
     
     # Sidebar configuration
     st.sidebar.header("⚙️ Configuration")
     
     # Database connection section
-    st.sidebar.subheader("📊 Database Connection")
-    if st.sidebar.button("Connect to Database"):
-        with st.spinner("Connecting to PostgreSQL database..."):
-            try:
-                st.session_state.stations_data = db_conn.load_ev_stations()
-                if st.session_state.stations_data is not None:
-                    st.sidebar.success(f"✅ Loaded {len(st.session_state.stations_data)} charging stations")
-                else:
-                    st.sidebar.error("❌ Failed to load stations data")
-            except Exception as e:
-                st.sidebar.error(f"❌ Database connection failed: {str(e)}")
+    st.sidebar.subheader("📊 Data Loading")
+    
+    col1, col2 = st.sidebar.columns(2)
+    
+    with col1:
+        if st.button("Load EV Station Data"):
+            with st.spinner("Loading EV station data..."):
+                try:
+                    db_conn = DatabaseConnection()
+                    st.session_state.stations_data = db_conn.load_ev_stations()
+                    if st.session_state.stations_data is not None:
+                        st.sidebar.success(f"✅ Loaded {len(st.session_state.stations_data)} charging stations")
+                    else:
+                        st.sidebar.error("❌ Failed to load stations data")
+                except Exception as e:
+                    st.sidebar.error(f"❌ Database connection failed: {str(e)}")
+    
+    with col2:
+        if st.button("Load Sample Data"):
+            with st.spinner("Creating sample data..."):
+                try:
+                    from create_sample_data import create_sample_ev_stations
+                    st.session_state.stations_data = create_sample_ev_stations()
+                    st.sidebar.success(f"✅ Created {len(st.session_state.stations_data)} sample stations")
+                except Exception as e:
+                    st.sidebar.error(f"❌ Failed to create sample data: {str(e)}")
     
     # Route input section
     st.sidebar.subheader("🗺️ Route Configuration")
@@ -144,6 +155,9 @@ def main():
         if st.button("Apply Filtering"):
             with st.spinner("Filtering charging stations..."):
                 try:
+                    # Initialize components only when needed
+                    station_filters = StationFilters()
+                    
                     if filtering_method == "Smart ML Filtering":
                         user_preferences = {
                             'prefer_fast_charging': prefer_fast_charging,
@@ -232,6 +246,7 @@ def main():
                 if st.button("Perform Clustering"):
                     with st.spinner("Clustering stations..."):
                         try:
+                            clustering_engine = ClusteringEngine()
                             clustered_stations = clustering_engine.cluster_stations(
                                 st.session_state.filtered_stations, n_clusters
                             )
@@ -244,6 +259,7 @@ def main():
                 if st.button("Optimize Route"):
                     with st.spinner("Optimizing EV route..."):
                         try:
+                            ev_router = EVRouter()
                             ev_specs = {
                                 'battery_range': battery_range,
                                 'consumption_rate': consumption_rate,
@@ -266,13 +282,18 @@ def main():
             st.subheader("🗺️ Interactive Visualization")
             
             # Create and display map
-            map_obj = map_visualizer.create_route_map(
-                source_coords, dest_coords,
-                st.session_state.filtered_stations,
-                st.session_state.route_data
-            )
-            
-            st_folium(map_obj, width=1200, height=600)
+            try:
+                map_visualizer = MapVisualizer()
+                map_obj = map_visualizer.create_route_map(
+                    source_coords, dest_coords,
+                    st.session_state.filtered_stations,
+                    st.session_state.route_data
+                )
+                
+                st_folium(map_obj, width=1200, height=600)
+            except Exception as e:
+                st.error(f"❌ Map visualization failed: {str(e)}")
+                st.info("💡 You can still use the export features below")
             
             # Route analysis
             if st.session_state.route_data is not None:
@@ -372,6 +393,7 @@ def main():
             with col1:
                 if st.button("Export Filtered Stations (GeoJSON)"):
                     try:
+                        geojson_exporter = GeoJSONExporter()
                         geojson_data = geojson_exporter.export_stations(st.session_state.filtered_stations)
                         st.download_button(
                             label="Download GeoJSON",
@@ -473,94 +495,102 @@ def main():
                             'station_issues': station_issues,
                             'charging_speed': charging_speed,
                             'station_availability': station_availability,
-                            'would_recommend': would_recommend,
-                            'station_rating': overall_satisfaction  # Use overall satisfaction as station rating
+                            'would_recommend': would_recommend
                         }
                         
                         try:
                             from ml_models.adaptive_router import AdaptiveRouter
                             router = AdaptiveRouter()
-                            router.load_route_feedback()
-                            success = router.add_route_feedback(st.session_state.route_data, feedback)
-                            
-                            if success:
-                                st.success("✅ Thank you for your feedback! This will help improve future route recommendations.")
-                            else:
-                                st.error("❌ Failed to save feedback")
+                            router.add_route_feedback(st.session_state.route_data, feedback)
+                            st.success("✅ Feedback submitted successfully!")
                         except Exception as e:
-                            st.error(f"❌ Feedback submission failed: {str(e)}")
+                            st.error(f"❌ Failed to submit feedback: {str(e)}")
             
-            # Performance Analytics
+            # Analytics Section
             st.subheader("📊 Performance Analytics")
             
             if st.button("View Performance Analytics"):
                 try:
                     from ml_models.adaptive_router import AdaptiveRouter
                     router = AdaptiveRouter()
-                    router.load_route_feedback()
                     analytics = router.get_performance_analytics()
                     
                     if analytics:
-                        col1, col2, col3 = st.columns(3)
+                        col1, col2 = st.columns(2)
                         
                         with col1:
-                            st.metric("Total Routes", analytics['total_routes'])
+                            st.metric("Total Routes", analytics.get('total_routes', 0))
+                            st.metric("Avg Satisfaction", f"{analytics.get('avg_satisfaction', 0):.1f}/5")
                         
                         with col2:
-                            st.metric("Avg Efficiency", f"{analytics['avg_efficiency']:.1%}")
+                            st.metric("Avg Efficiency", f"{analytics.get('avg_efficiency', 0):.1%}")
+                            st.metric("Success Rate", f"{analytics.get('success_rate', 0):.1%}")
                         
-                        with col3:
-                            if analytics['best_stations']:
-                                best_station = analytics['best_stations'][0]
-                                st.metric("Best Station", f"{best_station[0][:20]}...")
-                        
-                        # Efficiency trend
-                        if analytics['efficiency_trend']:
-                            st.subheader("Efficiency Trend")
-                            import plotly.graph_objects as go
-                            
-                            fig = go.Figure()
-                            fig.add_trace(go.Scatter(
-                                y=analytics['efficiency_trend'],
-                                mode='lines+markers',
-                                name='Efficiency',
-                                line=dict(color='blue')
-                            ))
-                            fig.update_layout(
-                                title="Route Efficiency Over Time",
-                                xaxis_title="Route Number",
-                                yaxis_title="Efficiency Score"
+                        # Route trends
+                        if 'route_trends' in analytics:
+                            st.subheader("📈 Route Trends")
+                            trends = analytics['route_trends']
+                            fig = px.line(
+                                x=list(range(len(trends))),
+                                y=trends,
+                                title="Route Performance Over Time",
+                                labels={'x': 'Route Number', 'y': 'Satisfaction Score'}
                             )
                             st.plotly_chart(fig, use_container_width=True)
-                        
-                        # Station performance
-                        if analytics['station_stats']:
-                            st.subheader("Station Performance")
-                            station_df = pd.DataFrame([
-                                {'Station': k, 'Avg Rating': v['avg_rating'], 'Visits': v['total_visits']}
-                                for k, v in analytics['station_stats'].items()
-                            ])
-                            st.dataframe(station_df.sort_values('Avg Rating', ascending=False), use_container_width=True)
                     else:
-                        st.info("No performance data available yet. Complete some routes and provide feedback to see analytics.")
-                        
+                        st.info("No analytics data available yet. Create and rate some routes first!")
                 except Exception as e:
                     st.error(f"❌ Analytics failed: {str(e)}")
     
     else:
-        st.info("👆 Please connect to the database to begin the optimization process")
+        # Welcome section when no data is loaded
+        st.subheader("🚀 Welcome to EV Route Optimization!")
+        st.write("This application helps you find the best charging stations and optimize your EV route using advanced machine learning.")
         
-        # Show sample coordinates for testing
-        st.subheader("🗺️ Sample Coordinates")
-        st.markdown("""
-        **New York to Boston:**
-        - Source: 40.7128, -74.0060
-        - Destination: 42.3601, -71.0589
+        st.info("👆 Click 'Load Sample Data' in the sidebar to start with test data, or 'Load EV Station Data' to connect to a database.")
         
-        **Los Angeles to San Francisco:**
-        - Source: 34.0522, -118.2437
-        - Destination: 37.7749, -122.4194
-        """)
+        # Quick start guide
+        with st.expander("📚 Quick Start Guide"):
+            st.write("""
+            **Step 1:** Load data using the buttons in the sidebar
+            - **Load Sample Data**: Creates realistic test data with 1000+ stations
+            - **Load EV Station Data**: Connects to PostgreSQL database
+            
+            **Step 2:** Configure your route
+            - Set source and destination coordinates
+            - Adjust EV specifications (battery range, consumption)
+            - Choose filtering preferences
+            
+            **Step 3:** Process and optimize
+            - Apply filtering to find relevant stations
+            - Perform clustering to group stations
+            - Optimize route for efficient charging
+            
+            **Step 4:** Explore results
+            - View interactive map with optimized route
+            - Analyze ML predictions and recommendations
+            - Export data for external use
+            - Provide feedback for continuous improvement
+            """)
+        
+        # Sample coordinates for quick testing
+        with st.expander("📍 Sample Coordinates for Testing"):
+            st.write("""
+            **New York to Boston:**
+            - Source: 40.7128, -74.0060
+            - Destination: 42.3601, -71.0589
+            
+            **Los Angeles to San Francisco:**
+            - Source: 34.0522, -118.2437
+            - Destination: 37.7749, -122.4194
+            
+            **Chicago to Detroit:**
+            - Source: 41.8781, -87.6298
+            - Destination: 42.3314, -83.0458
+            """)
+
+if __name__ == "__main__":
+    main()
 
 if __name__ == "__main__":
     main()
