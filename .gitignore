@@ -1,0 +1,6 @@
+.env 
+__pycache__/ 
+.replit 
+LOCAL_SETUP.md 
+SIMPLE_SETUP.md 
+uv.lock 

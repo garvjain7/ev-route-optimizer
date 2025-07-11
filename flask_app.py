@@ -19,7 +19,7 @@ from clustering.clustering_engine import ClusteringEngine
 from routing.ev_router import EVRouter
 from visualization.map_visualizer import MapVisualizer
 from utils.geojson_exporter import GeoJSONExporter
-from create_sample_data import create_sample_ev_stations
+# from create_sample_data import create_sample_ev_stations
 
 app = Flask(__name__)
 app.secret_key = 'ev_routing_secret_key'
@@ -35,34 +35,49 @@ def index():
     return render_template('index.html')
 
 @app.route('/api/load_sample_data', methods=['POST'])
-def load_sample_data():
-    global stations_data
-    try:
-        stations_data = create_sample_ev_stations()
-        return jsonify({
-            'success': True,
-            'message': f'Created {len(stations_data)} sample stations',
-            'total_stations': len(stations_data)
-        })
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
+# def load_sample_data():
+#     global stations_data
+#     try:
+#         stations_data = create_sample_ev_stations()
+#         return jsonify({
+#             'success': True,
+#             'message': f'Created {len(stations_data)} sample stations',
+#             'total_stations': len(stations_data)
+#         })
+#     except Exception as e:
+#         return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/load_database', methods=['POST'])
 
 @app.route('/api/load_database', methods=['POST'])
 def load_database():
     global stations_data
     try:
+        # Parse request JSON
+        data = request.get_json(force=True) or {}
+        port_type = data.get('port_type', 'both').lower()  # default to 'both'
+
+        # Validate port type
+        if port_type not in ['ac', 'dc', 'both']:
+            return jsonify({'success': False, 'error': f"Invalid port_type '{port_type}'"}), 400
+
+        # Load from database
         db_conn = DatabaseConnection()
-        stations_data = db_conn.load_ev_stations()
+        stations_data = db_conn.load_ev_stations(port_type=port_type)
+
         if stations_data is not None:
             return jsonify({
                 'success': True,
                 'message': f'Loaded {len(stations_data)} charging stations',
-                'total_stations': len(stations_data)
+                'total_stations': len(stations_data),
+                # 'data': stations_data.to_dict(orient='records')  # uncomment if you want to return all stations
             })
         else:
-            return jsonify({'success': False, 'error': 'Failed to load stations data'})
+            return jsonify({'success': False, 'error': 'Failed to load stations data'}), 500
+
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 
 @app.route('/api/get_stats', methods=['GET'])
 def get_stats():
@@ -387,4 +402,5 @@ def get_route_details():
         return jsonify({'success': False, 'error': str(e)})
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port, debug=True)
