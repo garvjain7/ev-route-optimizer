@@ -3,7 +3,7 @@ import numpy as np
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.preprocessing import StandardScaler
 import joblib
-import streamlit as st
+# import streamlit as st
 from datetime import datetime, timedelta
 import json
 import os
@@ -32,7 +32,7 @@ class AdaptiveRouter:
                 return True
             return False
         except Exception as e:
-            st.error(f"Failed to load route feedback: {str(e)}")
+            print(f"Failed to load route feedback: {str(e)}")
             return False
     
     def save_route_feedback(self):
@@ -50,7 +50,7 @@ class AdaptiveRouter:
             
             return True
         except Exception as e:
-            st.error(f"Failed to save route feedback: {str(e)}")
+            print(f"Failed to save route feedback: {str(e)}")
             return False
     
     def add_route_feedback(self, route_data, user_feedback):
@@ -83,7 +83,7 @@ class AdaptiveRouter:
             
             return True
         except Exception as e:
-            st.error(f"Failed to add route feedback: {str(e)}")
+            print(f"Failed to add route feedback: {str(e)}")
             return False
     
     def prepare_route_features(self, route_data):
@@ -137,7 +137,7 @@ class AdaptiveRouter:
             return np.array(features).reshape(1, -1)
             
         except Exception as e:
-            st.error(f"Route feature preparation failed: {str(e)}")
+            print(f"Route feature preparation failed: {str(e)}")
             return None
     
     def _calculate_avg_station_rating(self, route_data):
@@ -214,12 +214,12 @@ class AdaptiveRouter:
             self.is_trained = True
             self._save_model()
             
-            st.success(f"Adaptive efficiency model trained! R²: {train_score:.3f}")
+            print(f"Adaptive efficiency model trained! R²: {train_score:.3f}")
             
             return True
             
         except Exception as e:
-            st.error(f"Efficiency model training failed: {str(e)}")
+            print(f"Efficiency model training failed: {str(e)}")
             return False
     
     def _train_with_synthetic_data(self):
@@ -290,12 +290,12 @@ class AdaptiveRouter:
             self.is_trained = True
             self._save_model()
             
-            st.success(f"Synthetic efficiency model trained! R²: {train_score:.3f}")
+            print(f"Synthetic efficiency model trained! R²: {train_score:.3f}")
             
             return True
             
         except Exception as e:
-            st.error(f"Synthetic training failed: {str(e)}")
+            print(f"Synthetic training failed: {str(e)}")
             return False
     
     def _calculate_efficiency_score(self, route, user_feedback):
@@ -359,7 +359,7 @@ class AdaptiveRouter:
             return max(0, min(1, efficiency_score))
             
         except Exception as e:
-            st.error(f"Route efficiency prediction failed: {str(e)}")
+            print(f"Route efficiency prediction failed: {str(e)}")
             return 0.5
     
     def get_adaptive_recommendations(self, route_data):
@@ -410,7 +410,7 @@ class AdaptiveRouter:
             return recommendations
             
         except Exception as e:
-            st.error(f"Adaptive recommendations failed: {str(e)}")
+            print(f"Adaptive recommendations failed: {str(e)}")
             return []
     
     def _save_model(self):
@@ -423,7 +423,7 @@ class AdaptiveRouter:
             
             return True
         except Exception as e:
-            st.error(f"Model saving failed: {str(e)}")
+            print(f"Model saving failed: {str(e)}")
             return False
     
     def _load_model(self):
@@ -476,5 +476,5 @@ class AdaptiveRouter:
             }
             
         except Exception as e:
-            st.error(f"Performance analytics failed: {str(e)}")
+            print(f"Performance analytics failed: {str(e)}")
             return None

@@ -39,7 +39,6 @@ class DatabaseConnection:
             # ✅ Test the database connection
             with self.engine.connect() as conn:
                 conn.execute(text("SELECT 1"))
-
             return True
 
         except Exception as e:
@@ -78,6 +77,24 @@ class DatabaseConnection:
                 if col not in df.columns:
                     df[col] = 'Unknown'
 
+            # ✅ Add fallback 'id' if missing
+            if 'id' not in df.columns:
+                df['id'] = df.index.astype(str)
+
+            # ✅ Use 'city' as 'state' if 'state' missing
+            if 'state' not in df.columns:
+                if 'city' in df.columns:
+                    df['state'] = df['city']
+                else:
+                    df['state'] = 'Unknown'
+
+            # ✅ Add 'network' (from owner if missing)
+            if 'network' not in df.columns:
+                if 'owner' in df.columns:
+                    df['network'] = df['owner']
+                else:
+                    df['network'] = 'Unknown'
+            
             # ✅ If 'ports' is missing, assume 0
             if 'ports' not in df.columns:
                 df['ports'] = 0

@@ -4,7 +4,7 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
 import joblib
-import streamlit as st
+# import streamlit as st
 from geopy.distance import geodesic
 from datetime import datetime, timedelta
 import os
@@ -46,7 +46,7 @@ class TravelTimePredictor:
             return base_time_hours, distance_km, road_type
             
         except Exception as e:
-            st.error(f"Base travel time calculation failed: {str(e)}")
+            print(f"Base travel time calculation failed: {str(e)}")
             return None, None, None
     
     def generate_traffic_factors(self, coord1, coord2, departure_time=None):
@@ -80,7 +80,7 @@ class TravelTimePredictor:
             return traffic_multiplier
             
         except Exception as e:
-            st.error(f"Traffic factor calculation failed: {str(e)}")
+            print(f"Traffic factor calculation failed: {str(e)}")
             return 1.0
     
     def prepare_features(self, route_segments):
@@ -137,7 +137,7 @@ class TravelTimePredictor:
             return np.array(features)
             
         except Exception as e:
-            st.error(f"Feature preparation failed: {str(e)}")
+            print(f"Feature preparation failed: {str(e)}")
             return None
     
     def _estimate_traffic_density(self, coord1, coord2):
@@ -240,7 +240,7 @@ class TravelTimePredictor:
             return features, np.array(actual_times[:len(features)])
             
         except Exception as e:
-            st.error(f"Synthetic data generation failed: {str(e)}")
+            print(f"Synthetic data generation failed: {str(e)}")
             return None, None
     
     def train_model(self):
@@ -272,12 +272,12 @@ class TravelTimePredictor:
             # Save model
             self._save_model()
             
-            st.success(f"Travel time model trained! Train R²: {train_score:.3f}, Test R²: {test_score:.3f}")
+            print(f"Travel time model trained! Train R²: {train_score:.3f}, Test R²: {test_score:.3f}")
             
             return True
             
         except Exception as e:
-            st.error(f"Model training failed: {str(e)}")
+            print(f"Model training failed: {str(e)}")
             return False
     
     def predict_travel_time(self, coord1, coord2, departure_time=None):
@@ -285,7 +285,7 @@ class TravelTimePredictor:
         try:
             if not self.is_trained:
                 if not self._load_model():
-                    st.warning("Training travel time model...")
+                    print("Training travel time model...")
                     if not self.train_model():
                         # Fallback to simple calculation
                         base_time, _, _ = self.calculate_base_travel_time(coord1, coord2)
@@ -312,7 +312,7 @@ class TravelTimePredictor:
             return max(predicted_time, 0.1)  # Ensure positive time
             
         except Exception as e:
-            st.error(f"Travel time prediction failed: {str(e)}")
+            print(f"Travel time prediction failed: {str(e)}")
             # Fallback to simple calculation
             base_time, _, _ = self.calculate_base_travel_time(coord1, coord2)
             if base_time:
@@ -346,7 +346,7 @@ class TravelTimePredictor:
             return segment_times
             
         except Exception as e:
-            st.error(f"Route time prediction failed: {str(e)}")
+            print(f"Route time prediction failed: {str(e)}")
             return []
     
     def _save_model(self):
@@ -359,7 +359,7 @@ class TravelTimePredictor:
             
             return True
         except Exception as e:
-            st.error(f"Model saving failed: {str(e)}")
+            print(f"Model saving failed: {str(e)}")
             return False
     
     def _load_model(self):

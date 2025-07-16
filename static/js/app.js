@@ -15,6 +15,11 @@ function initializeEventListeners() {
     document.getElementById('loadSampleData').addEventListener('click', loadSampleData);
     document.getElementById('loadDatabase').addEventListener('click', loadDatabase);
     
+    // Dataset switching
+    document.getElementById('switchToSample').addEventListener('click', () => switchDataset('sample'));
+    document.getElementById('switchToDatabase').addEventListener('click', () => switchDataset('database'));
+
+    
     // Filtering and optimization
     document.getElementById('applyFiltering').addEventListener('click', applyFiltering);
     document.getElementById('performClustering').addEventListener('click', performClustering);
@@ -150,7 +155,8 @@ async function loadDatabase() {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
-            }
+            },
+            body: JSON.stringify({})
         });
         
         const data = await response.json();
@@ -170,6 +176,35 @@ async function loadDatabase() {
     }
 }
 
+// Switch between datasets (sample or database)
+async function switchDataset(type) {
+    showLoading(true);
+    try {
+        const response = await fetch('/api/switch_dataset', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ dataset_type: type })
+        });
+
+        const data = await response.json();
+        if (data.success) {
+            showAlert(`Switched to ${type} dataset. ${data.total_stations} stations loaded.`, 'success');
+            dataLoaded = true;
+            filteredStations = false;
+            routeOptimized = false;
+            showDataSections();
+            updateStats();
+        } else {
+            showAlert(data.error || 'Switching dataset failed.', 'danger');
+        }
+    } catch (error) {
+        showAlert('Error switching dataset: ' + error.message, 'danger');
+    } finally {
+        showLoading(false);
+    }
+}
+
+
 // Show data sections after loading
 function showDataSections() {
     document.getElementById('welcomeSection').style.display = 'none';
@@ -188,6 +223,7 @@ async function updateStats() {
         if (data.success) {
             document.getElementById('totalStations').textContent = data.stats.total_stations;
             document.getElementById('statesCovered').textContent = data.stats.states_covered;
+            document.getElementById('datasetType').textContent = data.stats.dataset_type || 'Unknown';
             
             // Calculate direct distance
             const sourceLat = parseFloat(document.getElementById('sourceLat').value);
@@ -341,18 +377,18 @@ function showFilteringResults(data) {
 
 // Perform clustering
 async function performClustering() {
-    if (!filteredStations) {
+    if (!filteredStations || filteredStations.length === 0) {
         showAlert('Please apply filtering first', 'warning');
         return;
     }
-    
+
     showLoading(true);
-    
+
     try {
         const requestData = {
-            n_clusters: parseInt(document.getElementById('nClusters').value)
+            n_clusters: parseInt(document.getElementById('nclusters').value) || 8
         };
-        
+
         const response = await fetch('/api/perform_clustering', {
             method: 'POST',
             headers: {
@@ -360,16 +396,19 @@ async function performClustering() {
             },
             body: JSON.stringify(requestData)
         });
-        
+
         const data = await response.json();
-        
+
         if (data.success) {
             showAlert(data.message, 'success');
             updateOptimizationResults('clustering', data);
+            // displayClusterStats(data.summary, data.cluster_stats); // Custom display function
         } else {
-            showAlert(data.error, 'danger');
+            showAlert(data.error || 'Clustering failed', 'danger');
         }
+
     } catch (error) {
+        console.error('[Clustering Error]', error);
         showAlert('Clustering failed: ' + error.message, 'danger');
     } finally {
         showLoading(false);
@@ -378,13 +417,13 @@ async function performClustering() {
 
 // Optimize route
 async function optimizeRoute() {
-    if (!filteredStations) {
+    if (!filteredStations || filteredStations.length === 0) {
         showAlert('Please apply filtering first', 'warning');
         return;
     }
-    
+
     showLoading(true);
-    
+
     try {
         const requestData = {
             source_lat: parseFloat(document.getElementById('sourceLat').value),
@@ -396,7 +435,7 @@ async function optimizeRoute() {
             charging_time: parseFloat(document.getElementById('chargingTime').value),
             safety_margin: parseFloat(document.getElementById('safetyMargin').value)
         };
-        
+
         const response = await fetch('/api/optimize_route', {
             method: 'POST',
             headers: {
@@ -404,25 +443,28 @@ async function optimizeRoute() {
             },
             body: JSON.stringify(requestData)
         });
-        
+
         const data = await response.json();
-        
+
         if (data.success) {
             showAlert(data.message, 'success');
             routeOptimized = true;
             updateOptimizationResults('routing', data);
-            generateMap();
-            showRouteAnalysis();
+            generateMap(data.route);
+            showRouteAnalysis(data.route_stats, data.ml_predictions);
             document.getElementById('feedbackSection').style.display = 'block';
         } else {
-            showAlert(data.error, 'danger');
+            showAlert(data.error || 'Route optimization failed', 'danger');
         }
+
     } catch (error) {
+        console.error('[CLIENT ERROR]', error);
         showAlert('Route optimization failed: ' + error.message, 'danger');
     } finally {
         showLoading(false);
     }
 }
+
 
 // Update optimization results
 function updateOptimizationResults(type, data) {

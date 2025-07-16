@@ -5,7 +5,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.metrics import mean_squared_error, classification_report
 import joblib
-import streamlit as st
+# import streamlit as st
 from datetime import datetime
 import os
 
@@ -96,7 +96,7 @@ class StationPredictor:
             return features_df[feature_columns].fillna(0)
             
         except Exception as e:
-            st.error(f"Feature preparation failed: {str(e)}")
+            print(f"Feature preparation failed: {str(e)}")
             return None
     
     def _calculate_station_density(self, stations_df, radius_km=10):
@@ -190,7 +190,7 @@ class StationPredictor:
             return features, np.array(congestion_labels), np.array(station_ratings), stations_df
             
         except Exception as e:
-            st.error(f"Synthetic data generation failed: {str(e)}")
+            print(f"Synthetic data generation failed: {str(e)}")
             return None, None, None, None
     
     def train_models(self, stations_df):
@@ -233,12 +233,12 @@ class StationPredictor:
             # Save models
             self._save_models()
             
-            st.success(f"Models trained successfully! Congestion Accuracy: {cong_accuracy:.3f}, Rating MSE: {rat_mse:.3f}")
+            print(f"Models trained successfully! Congestion Accuracy: {cong_accuracy:.3f}, Rating MSE: {rat_mse:.3f}")
             
             return True
             
         except Exception as e:
-            st.error(f"Model training failed: {str(e)}")
+            print(f"Model training failed: {str(e)}")
             return False
     
     def predict_station_metrics(self, stations_df, route_info=None, time_info=None):
@@ -247,7 +247,7 @@ class StationPredictor:
             if not self.is_trained:
                 # Try to load saved models
                 if not self._load_models():
-                    st.warning("Models not trained. Training with available data...")
+                    print("Models not trained. Training with available data...")
                     if not self.train_models(stations_df):
                         return None
             
@@ -279,7 +279,7 @@ class StationPredictor:
             return result_df
             
         except Exception as e:
-            st.error(f"Prediction failed: {str(e)}")
+            print(f"Prediction failed: {str(e)}")
             return None
     
     def _save_models(self):
@@ -293,7 +293,7 @@ class StationPredictor:
             
             return True
         except Exception as e:
-            st.error(f"Model saving failed: {str(e)}")
+            print(f"Model saving failed: {str(e)}")
             return False
     
     def _load_models(self):
@@ -325,5 +325,5 @@ class StationPredictor:
             return optimal_stations
             
         except Exception as e:
-            st.error(f"Optimal station selection failed: {str(e)}")
+            print(f"Optimal station selection failed: {str(e)}")
             return stations_df.head(n_stations)

@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 from geopy.distance import geodesic
-import streamlit as st
+# import streamlit as st
 from utils.distance_calculator import DistanceCalculator
 from ml_models.station_predictor import StationPredictor
 from ml_models.travel_time_predictor import TravelTimePredictor
@@ -40,7 +40,7 @@ class EVRouter:
             )
         
         except Exception as e:
-            st.error(f"Route optimization failed: {str(e)}")
+            print(f"Route optimization failed: {str(e)}")
             return None
     
     def _create_direct_route(self, source_coords, dest_coords, ev_specs):
@@ -78,7 +78,7 @@ class EVRouter:
             return route_data
         
         except Exception as e:
-            st.error(f"Direct route creation failed: {str(e)}")
+            print(f"Direct route creation failed: {str(e)}")
             return None
     
     def _create_multi_stop_route(self, source_coords, dest_coords, stations_df, ev_specs, effective_range):
@@ -103,7 +103,7 @@ class EVRouter:
                 )
                 
                 if charging_station is None:
-                    st.warning("Could not find suitable charging station")
+                    print("Could not find suitable charging station")
                     break
                 
                 # Calculate distance to charging station
@@ -163,7 +163,7 @@ class EVRouter:
                 
                 # Safety check to prevent infinite loop
                 if stop_counter > 10:
-                    st.warning("Maximum number of charging stops reached")
+                    print("Maximum number of charging stops reached")
                     break
             
             # Add final leg to destination
@@ -222,7 +222,7 @@ class EVRouter:
             return route_data
         
         except Exception as e:
-            st.error(f"Multi-stop route creation failed: {str(e)}")
+            print(f"Multi-stop route creation failed: {str(e)}")
             return None
     
     def _find_optimal_charging_station(self, current_position, dest_coords, stations_df, effective_range):
@@ -279,7 +279,7 @@ class EVRouter:
                         reachable_stations['optimization_score'] -= dc_ports * 2
                         
             except Exception as e:
-                st.warning(f"ML prediction failed, using traditional scoring: {str(e)}")
+                print(f"ML prediction failed, using traditional scoring: {str(e)}")
                 # Traditional scoring as fallback
                 reachable_stations['optimization_score'] = (
                     reachable_stations['distance_to_dest'] * 0.7 +
@@ -296,7 +296,7 @@ class EVRouter:
             return best_station
         
         except Exception as e:
-            st.error(f"Charging station selection failed: {str(e)}")
+            print(f"Charging station selection failed: {str(e)}")
             return None
     
     def calculate_route_efficiency(self, route_data):
@@ -340,7 +340,7 @@ class EVRouter:
             return efficiency_metrics
         
         except Exception as e:
-            st.error(f"Efficiency calculation failed: {str(e)}")
+            print(f"Efficiency calculation failed: {str(e)}")
             return None
     
     def validate_route(self, route_data, ev_specs):

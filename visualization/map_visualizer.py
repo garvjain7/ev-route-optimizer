@@ -2,7 +2,7 @@ import folium
 import pandas as pd
 import numpy as np
 from geopy.distance import geodesic
-import streamlit as st
+# import streamlit as st
 
 class MapVisualizer:
     def __init__(self):
@@ -84,7 +84,7 @@ class MapVisualizer:
             return m
         
         except Exception as e:
-            st.error(f"Map creation failed: {str(e)}")
+            print(f"Map creation failed: {str(e)}")
             return self._create_fallback_map(source_coords, dest_coords)
     
     def _add_charging_stations(self, map_obj, stations_df):
@@ -135,7 +135,7 @@ class MapVisualizer:
                     group.add_to(map_obj)
         
         except Exception as e:
-            st.error(f"Failed to add charging stations: {str(e)}")
+            print(f"Failed to add charging stations: {str(e)}")
     
     def _create_station_popup(self, station):
         """Create detailed popup content for charging station"""
@@ -250,7 +250,7 @@ class MapVisualizer:
             route_group.add_to(map_obj)
         
         except Exception as e:
-            st.error(f"Failed to add optimized route: {str(e)}")
+            print(f"Failed to add optimized route: {str(e)}")
     
     def _fit_bounds(self, map_obj, source_coords, dest_coords, stations_df=None):
         """Fit map bounds to show all relevant points"""
@@ -274,7 +274,7 @@ class MapVisualizer:
                 map_obj.fit_bounds([southwest, northeast], padding=(20, 20))
         
         except Exception as e:
-            st.error(f"Failed to fit map bounds: {str(e)}")
+            print(f"Failed to fit map bounds: {str(e)}")
     
     def _create_fallback_map(self, source_coords, dest_coords):
         """Create a simple fallback map if main map creation fails"""
@@ -310,7 +310,7 @@ class MapVisualizer:
             return m
         
         except Exception as e:
-            st.error(f"Failed to create fallback map: {str(e)}")
+            print(f"Failed to create fallback map: {str(e)}")
             return None
     
     def create_cluster_analysis_map(self, clustered_data):
@@ -359,5 +359,5 @@ class MapVisualizer:
             return m
         
         except Exception as e:
-            st.error(f"Cluster analysis map creation failed: {str(e)}")
+            print(f"Cluster analysis map creation failed: {str(e)}")
             return None

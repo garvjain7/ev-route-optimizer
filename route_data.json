@@ -1,0 +1,39 @@
+{
+  "charging_stops": [],
+  "energy_profile": {
+    "battery_level": [
+      100,
+      99.72648602977766
+    ],
+    "distance": [
+      0,
+      4.102709553335045
+    ]
+  },
+  "statistics": {
+    "battery_used": 0.27351397022233637,
+    "charging_stops": 0,
+    "efficiency": 20.0,
+    "energy_consumed": 0.8205419106670091,
+    "total_distance": 4.102709553335045,
+    "total_time": 0.05128386941668807
+  },
+  "waypoints": [
+    {
+      "coordinates": [
+        26.9124,
+        75.7873
+      ],
+      "name": "Start",
+      "type": "source"
+    },
+    {
+      "coordinates": [
+        26.8851,
+        75.8152
+      ],
+      "name": "End",
+      "type": "destination"
+    }
+  ]
+}

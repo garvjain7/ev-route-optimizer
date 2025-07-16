@@ -11,6 +11,7 @@ import plotly.express as px
 from plotly.utils import PlotlyJSONEncoder
 import io
 import base64
+from dotenv import load_dotenv
 
 # Import our ML components
 from database.db_connection import DatabaseConnection
@@ -19,82 +20,132 @@ from clustering.clustering_engine import ClusteringEngine
 from routing.ev_router import EVRouter
 from visualization.map_visualizer import MapVisualizer
 from utils.geojson_exporter import GeoJSONExporter
-# from create_sample_data import create_sample_ev_stations
+from create_sample_data import create_sample_ev_stations
 
+load_dotenv()
 app = Flask(__name__)
-app.secret_key = 'ev_routing_secret_key'
+app.secret_key = os.getenv('SECRET_KEY', 'fallback_dev_key')
 
 # Global variables to store data
 stations_data = None
 filtered_stations = None
 route_data = None
 clustered_stations = None
+current_dataset_type = 'none'  # 'sample', 'database', or 'uploaded'
 
 @app.route('/')
 def index():
     return render_template('index.html')
 
 @app.route('/api/load_sample_data', methods=['POST'])
-# def load_sample_data():
-#     global stations_data
-#     try:
-#         stations_data = create_sample_ev_stations()
-#         return jsonify({
-#             'success': True,
-#             'message': f'Created {len(stations_data)} sample stations',
-#             'total_stations': len(stations_data)
-#         })
-#     except Exception as e:
-#         return jsonify({'success': False, 'error': str(e)})
-
-@app.route('/api/load_database', methods=['POST'])
+def load_sample_data():
+    global stations_data, current_dataset_type
+    try:
+        stations_data = create_sample_ev_stations()
+        current_dataset_type = 'sample'
+        return jsonify({
+            'success': True,
+            'message': f'Created {len(stations_data)} sample stations',
+            'total_stations': len(stations_data)
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/api/load_database', methods=['POST'])
 def load_database():
-    global stations_data
+    global stations_data, current_dataset_type
     try:
-        # Parse request JSON
         data = request.get_json(force=True) or {}
-        port_type = data.get('port_type', 'both').lower()  # default to 'both'
+        port_type = data.get('port_type', 'both').lower()
 
-        # Validate port type
         if port_type not in ['ac', 'dc', 'both']:
             return jsonify({'success': False, 'error': f"Invalid port_type '{port_type}'"}), 400
 
-        # Load from database
         db_conn = DatabaseConnection()
-        stations_data = db_conn.load_ev_stations(port_type=port_type)
+        stations_data = db_conn.load_ev_station(port_type=port_type)
+        current_dataset_type = 'database'
 
         if stations_data is not None:
+            # Preprocessing: fill missing essential columns
+            if 'state' not in stations_data.columns:
+                stations_data['state'] = 'Unknown'
+            if 'network' not in stations_data.columns:
+                stations_data['network'] = 'Unknown'
+            if 'dc_fast_ports' not in stations_data.columns:
+                stations_data['dc_fast_ports'] = 0
+
             return jsonify({
                 'success': True,
                 'message': f'Loaded {len(stations_data)} charging stations',
-                'total_stations': len(stations_data),
-                # 'data': stations_data.to_dict(orient='records')  # uncomment if you want to return all stations
+                'total_stations': len(stations_data)
             })
         else:
             return jsonify({'success': False, 'error': 'Failed to load stations data'}), 500
-
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@app.route('/api/switch_dataset', methods=['POST'])
+def switch_dataset():
+    global stations_data, current_dataset_type
+    try:
+        data = request.get_json()
+        new_dataset = data.get('dataset_type')
+
+        if new_dataset == 'sample':
+            stations_data = create_sample_ev_stations()
+        elif new_dataset == 'database':
+            db_conn = DatabaseConnection()
+            stations_data = db_conn.load_ev_station()
+        else:
+            return jsonify({'success': False, 'error': 'Unsupported dataset type'})
+
+        current_dataset_type = new_dataset
+        if stations_data is None:
+            return jsonify({'success': False, 'error': 'Failed to load stations data'})
+        return jsonify({'success': True, 'message': f'Switched to {new_dataset} dataset', 'total_stations': len(stations_data)})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/api/get_stats', methods=['GET'])
 def get_stats():
-    global stations_data
+    global stations_data, current_dataset_type
     if stations_data is None:
         return jsonify({'success': False, 'error': 'No data loaded'})
-    
+
     try:
         stats = {
             'total_stations': len(stations_data),
-            'states_covered': stations_data['state'].nunique() if 'state' in stations_data.columns else 0,
-            'networks': stations_data['network'].nunique() if 'network' in stations_data.columns else 0,
-            'dc_fast_stations': len(stations_data[stations_data['dc_fast_ports'] > 0]) if 'dc_fast_ports' in stations_data.columns else 0
+            'states_covered': stations_data['state'].nunique() if 'state' in stations_data.columns else 'N/A',
+            'networks': stations_data['network'].nunique() if 'network' in stations_data.columns else 'N/A',
+            'dc_fast_stations': len(stations_data[stations_data.get('dc_fast_ports', 0) > 0]) if 'dc_fast_ports' in stations_data.columns else 'N/A',
+            'dataset_type': current_dataset_type
         }
         return jsonify({'success': True, 'stats': stats})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
+    
+@app.route('/api/dev/set_stations', methods=['POST'])
+def dev_set_stations():
+    """
+    DEV-ONLY ROUTE: Manually set stations_data for testing from a client script.
+    """
+    global stations_data, current_dataset_type
+    try:
+        data = request.get_json(force=True)
+        stations_data_list = data.get("stations_data", [])
+
+        if not stations_data_list:
+            return jsonify({'success': False, 'error': 'stations_data is empty'}), 400
+
+        stations_data = pd.DataFrame(stations_data_list)
+        current_dataset_type = 'test'
+
+        return jsonify({
+            'success': True,
+            'message': f'{len(stations_data)} stations loaded into memory for testing.'
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/apply_filtering', methods=['POST'])
 def apply_filtering():
@@ -189,61 +240,92 @@ def apply_filtering():
 @app.route('/api/perform_clustering', methods=['POST'])
 def perform_clustering():
     global filtered_stations, clustered_stations
-    if filtered_stations is None:
-        return jsonify({'success': False, 'error': 'No filtered stations available'})
-    
+
+    if filtered_stations is None or filtered_stations.empty:
+        return jsonify({'success': False, 'error': 'No filtered stations available'}), 400
+
     try:
         data = request.get_json()
-        n_clusters = data.get('n_clusters', 8)
-        
+        n_clusters = int(data.get('n_clusters', 8))
+
+        print(f"[DEBUG] Performing clustering with {n_clusters} clusters on {len(filtered_stations)} stations")
+
         clustering_engine = ClusteringEngine()
-        clustered_stations = clustering_engine.cluster_stations(filtered_stations, n_clusters)
-        
+        clustered_result = clustering_engine.cluster_stations(filtered_stations, n_clusters)
+
+        if clustered_result is None:
+            return jsonify({'success': False, 'error': 'Clustering engine returned None'}), 500
+
+        clustered_stations = clustered_result['stations']
+
         return jsonify({
             'success': True,
             'message': f'Created {n_clusters} clusters',
-            'n_clusters': n_clusters
+            'n_clusters': n_clusters,
+            'cluster_stats': clustered_result.get('statistics', {}),
+            'centroids': clustered_result.get('centroids', {}),
+            'summary': clustering_engine.get_cluster_summary(clustered_result)
         })
+
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
+        print(f"[ERROR] perform_clustering failed: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/optimize_route', methods=['POST'])
 def optimize_route():
     global filtered_stations, route_data
-    if filtered_stations is None:
-        return jsonify({'success': False, 'error': 'No filtered stations available'})
-    
+
+    if filtered_stations is None or filtered_stations.empty:
+        return jsonify({'success': False, 'error': 'No filtered stations available'}), 400
+
     try:
         data = request.get_json()
-        source_coords = (data['source_lat'], data['source_lon'])
-        dest_coords = (data['dest_lat'], data['dest_lon'])
-        
+
+        # Validate input
+        required_fields = ['source_lat', 'source_lon', 'dest_lat', 'dest_lon']
+        if not all(k in data for k in required_fields):
+            return jsonify({'success': False, 'error': 'Missing required coordinates'}), 400
+
+        # Parse coordinates
+        source_coords = (float(data['source_lat']), float(data['source_lon']))
+        dest_coords = (float(data['dest_lat']), float(data['dest_lon']))
+
+        # EV specifications with defaults
         ev_specs = {
-            'battery_range': data.get('battery_range', 300),
-            'consumption_rate': data.get('consumption_rate', 20),
-            'charging_time': data.get('charging_time', 30),
-            'safety_margin': data.get('safety_margin', 15)
+            'battery_range': float(data.get('battery_range', 300)),
+            'consumption_rate': float(data.get('consumption_rate', 20)),
+            'charging_time': float(data.get('charging_time', 30)),
+            'safety_margin': float(data.get('safety_margin', 15))
         }
-        
+
+        # Initialize router
         ev_router = EVRouter()
-        route_result = ev_router.optimize_route(
-            source_coords, dest_coords, filtered_stations, ev_specs
-        )
-        
+
+        print(f"[DEBUG] Optimizing route from {source_coords} to {dest_coords}")
+        print(f"[DEBUG] Stations available: {len(filtered_stations)}")
+
+        route_result = ev_router.optimize_route(source_coords, dest_coords, filtered_stations, ev_specs)
+
+        if route_result is None:
+            return jsonify({'success': False, 'error': 'Route optimization failed'}), 500
+
         route_data = route_result
-        
-        # Extract route statistics
         route_stats = route_result.get('statistics', {})
-        
+
         return jsonify({
             'success': True,
             'message': 'Route optimized successfully',
+            'route_id': route_result.get('route_id'),
             'route_stats': route_stats,
-            'has_ml_predictions': 'ml_predictions' in route_result
-        })
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
+            'has_ml_predictions': 'ml_predictions' in route_result,
+            'ml_predictions': route_result.get('ml_predictions', {}),
+            'route': route_result
+        }), 200
 
+    except Exception as e:
+        print(f"[ERROR] optimize_route failed: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+        
 @app.route('/api/generate_map', methods=['POST'])
 def generate_map():
     global filtered_stations, route_data

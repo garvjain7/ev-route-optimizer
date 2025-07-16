@@ -1,6 +1,6 @@
 import json
 import pandas as pd
-import streamlit as st
+# import streamlit as st
 
 class GeoJSONExporter:
     def __init__(self):
@@ -41,7 +41,7 @@ class GeoJSONExporter:
             return geojson_data
         
         except Exception as e:
-            st.error(f"GeoJSON export failed: {str(e)}")
+            print(f"GeoJSON export failed: {str(e)}")
             return None
     
     def _create_station_properties(self, station):
@@ -80,7 +80,7 @@ class GeoJSONExporter:
             return properties
         
         except Exception as e:
-            st.error(f"Station properties creation failed: {str(e)}")
+            print(f"Station properties creation failed: {str(e)}")
             return {"name": "EV Station", "error": str(e)}
     
     def export_route(self, route_data):
@@ -164,7 +164,7 @@ class GeoJSONExporter:
             return geojson_data
         
         except Exception as e:
-            st.error(f"Route GeoJSON export failed: {str(e)}")
+            print(f"Route GeoJSON export failed: {str(e)}")
             return None
     
     def export_clusters(self, clustered_data):
@@ -225,7 +225,7 @@ class GeoJSONExporter:
             return geojson_data
         
         except Exception as e:
-            st.error(f"Cluster GeoJSON export failed: {str(e)}")
+            print(f"Cluster GeoJSON export failed: {str(e)}")
             return None
     
     def save_to_file(self, geojson_data, filename):
@@ -240,7 +240,7 @@ class GeoJSONExporter:
             return True
         
         except Exception as e:
-            st.error(f"File save failed: {str(e)}")
+            print(f"File save failed: {str(e)}")
             return False
     
     def validate_geojson(self, geojson_data):

@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 from geopy.distance import geodesic
-import streamlit as st
+# import streamlit as st
 
 class DistanceCalculator:
     def __init__(self):
@@ -12,7 +12,7 @@ class DistanceCalculator:
         try:
             return geodesic(coord1, coord2).kilometers
         except Exception as e:
-            st.error(f"Distance calculation failed: {str(e)}")
+            print(f"Distance calculation failed: {str(e)}")
             return None
     
     def calculate_distance_matrix(self, coords_list):
@@ -30,7 +30,7 @@ class DistanceCalculator:
             return distance_matrix
         
         except Exception as e:
-            st.error(f"Distance matrix calculation failed: {str(e)}")
+            print(f"Distance matrix calculation failed: {str(e)}")
             return None
     
     def find_nearest_stations(self, reference_coord, stations_df, n_stations=5):
@@ -52,7 +52,7 @@ class DistanceCalculator:
             return nearest_stations
         
         except Exception as e:
-            st.error(f"Nearest stations calculation failed: {str(e)}")
+            print(f"Nearest stations calculation failed: {str(e)}")
             return None
     
     def calculate_route_distance(self, waypoints):
@@ -69,7 +69,7 @@ class DistanceCalculator:
             return total_distance
         
         except Exception as e:
-            st.error(f"Route distance calculation failed: {str(e)}")
+            print(f"Route distance calculation failed: {str(e)}")
             return None
     
     def calculate_bearing(self, coord1, coord2):
@@ -90,7 +90,7 @@ class DistanceCalculator:
             return bearing
         
         except Exception as e:
-            st.error(f"Bearing calculation failed: {str(e)}")
+            print(f"Bearing calculation failed: {str(e)}")
             return None
     
     def calculate_midpoint(self, coord1, coord2):
@@ -111,7 +111,7 @@ class DistanceCalculator:
             return (np.degrees(lat3), np.degrees(lon3))
         
         except Exception as e:
-            st.error(f"Midpoint calculation failed: {str(e)}")
+            print(f"Midpoint calculation failed: {str(e)}")
             return None
     
     def calculate_bounding_box(self, center_coord, radius_km):
@@ -134,7 +134,7 @@ class DistanceCalculator:
             }
         
         except Exception as e:
-            st.error(f"Bounding box calculation failed: {str(e)}")
+            print(f"Bounding box calculation failed: {str(e)}")
             return None
     
     def calculate_travel_time(self, distance_km, speed_kmh=80):
@@ -147,7 +147,7 @@ class DistanceCalculator:
             return travel_time_hours
         
         except Exception as e:
-            st.error(f"Travel time calculation failed: {str(e)}")
+            print(f"Travel time calculation failed: {str(e)}")
             return None
     
     def calculate_energy_consumption(self, distance_km, consumption_rate_kwh_per_100km):
@@ -160,7 +160,7 @@ class DistanceCalculator:
             return energy_consumed
         
         except Exception as e:
-            st.error(f"Energy consumption calculation failed: {str(e)}")
+            print(f"Energy consumption calculation failed: {str(e)}")
             return None
     
     def calculate_detour_factor(self, source_coord, dest_coord, via_coord):
@@ -182,5 +182,5 @@ class DistanceCalculator:
             return detour_factor
         
         except Exception as e:
-            st.error(f"Detour factor calculation failed: {str(e)}")
+            print(f"Detour factor calculation failed: {str(e)}")
             return None
