@@ -5,6 +5,7 @@ import sys
 import os
 import math
 import webbrowser
+import inspect
 
 BASE_URL = "http://127.0.0.1:5000"
 
@@ -76,14 +77,15 @@ def fallback_top_n_stations(station_list, src_lat, src_lon, dst_lat, dst_lon):
         else:
             sorted_stations = station_list
 
-        top = [s for s in sorted_stations if is_between_route(s['lat'], s['lon'], src_lat, src_lon, dst_lat, dst_lon)]
+        top = [s for s in sorted_stations if is_station_near_route(s['lat'], s['lon'], src_lat, src_lon, dst_lat, dst_lon)]
         return top[:8] if top else sorted_stations[:8]
     except Exception as e:
         print(f"[ERROR] Fallback selection failed: {e}")
         return station_list[:8] if station_list else []
 
 
-def is_between_route(lat, lon, src_lat, src_lon, dst_lat, dst_lon, buffer_km=20):
+def is_station_near_route(lat, lon, src_lat, src_lon, dst_lat, dst_lon, max_side_km=5):
+    """Check if a station lies within max_side_km from the straight line between source and destination"""
     def haversine(lat1, lon1, lat2, lon2):
         R = 6371
         phi1, phi2 = math.radians(lat1), math.radians(lat2)
@@ -92,10 +94,25 @@ def is_between_route(lat, lon, src_lat, src_lon, dst_lat, dst_lon, buffer_km=20)
         a = math.sin(dphi/2)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(dlambda/2)**2
         return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
-    dist_total = haversine(src_lat, src_lon, dst_lat, dst_lon)
-    dist_1 = haversine(src_lat, src_lon, lat, lon)
-    dist_2 = haversine(lat, lon, dst_lat, dst_lon)
-    return abs((dist_1 + dist_2) - dist_total) <= buffer_km
+    A = (src_lat, src_lon)
+    B = (dst_lat, dst_lon)
+    P = (lat, lon)
+
+    dist_AB = haversine(*A, *B)
+    dist_AP = haversine(*A, *P)
+    dist_BP = haversine(*B, *P)
+
+    # Heron's formula for triangle area
+    s = (dist_AB + dist_AP + dist_BP) / 2
+    area = math.sqrt(s * (s - dist_AB) * (s - dist_AP) * (s - dist_BP))
+
+    try:
+        height = (2 * area) / dist_AB
+    except ZeroDivisionError:
+        return False
+
+    return height <= max_side_km
+
 
 
 def check_duplicate_stations(method, station_list):
@@ -148,6 +165,7 @@ def debug_pipeline(source_lat, source_lon, dest_lat, dest_lon, filtering_method)
             "power_levels": ["Level2", "DC_Fast"]
         }
     }
+
     result = safe_post("/api/apply_filtering", filtering_payload)
     filtered_count = result.get("filtered_count", 0)
     print(f"[INFO] Filtered Stations Count ({filtering_method}): {filtered_count}")
@@ -177,13 +195,53 @@ def debug_pipeline(source_lat, source_lon, dest_lat, dest_lon, filtering_method)
             print("[WARNING] Very high station count after filtering. Likely ineffective filter logic.")
         check_duplicate_stations(filtering_method, station_list)
 
-    result_cluster = safe_post("/api/perform_clustering", {"n_clusters": 8})
-    if not result_cluster['success']:
-        print("[WARNING] Clustering failed. Will fallback to top-N stations from filtered list.")
+    cluster_payload = {}
+    if filtered_count > 12:
+        cluster_payload["n_clusters"] = min(6, filtered_count // 2)
+
+    # Fixed clustering request with payload
+    result_cluster = safe_post("/api/perform_clustering", cluster_payload)
+    
+    # Enhanced result validation
+    # === Enhanced Clustering Result Validation ===
+    if not result_cluster.get('success'):
+        reason = result_cluster.get('error', 'Server did not provide an error message')
+        print(f"[WARNING] Clustering failed (Reason: {reason}). Fallback to top-N stations...")
+
         fallback_stations = fallback_top_n_stations(station_list, source_lat, source_lon, dest_lat, dest_lon)
         if not fallback_stations:
             print("[FATAL] No fallback stations available. Exiting pipeline.")
             return
+
+        result_cluster['clusters'] = [fallback_stations]  # Maintain expected format
+        print(f"[INFO] Fallback clustering used with {len(fallback_stations)} stations.")
+
+    elif not result_cluster.get('clusters'):
+        print("[WARNING] Clustering returned no clusters. Using fallback top-N stations...")
+
+        fallback_stations = fallback_top_n_stations(station_list, source_lat, source_lon, dest_lat, dest_lon)
+        if not fallback_stations:
+            print("[FATAL] No fallback stations available. Exiting pipeline.")
+            return
+
+        result_cluster['clusters'] = [fallback_stations]
+        print(f"[INFO] Fallback clustering used with {len(fallback_stations)} stations.")
+
+    else:
+        print(f"[INFO] Clustering succeeded: {result_cluster.get('message', 'Clusters formed successfully')}")
+
+
+    # Add cluster diagnostics
+    print(f"[INFO] Obtained {len(result_cluster['clusters'])} clusters")
+    valid_clusters = [c for c in result_cluster['clusters'] if len(c) > 0]
+    print(f"[CHECK] Non-empty clusters: {len(valid_clusters)}/{len(result_cluster['clusters'])}")
+    
+    if valid_clusters:
+        check_duplicate_stations(f"{filtering_method} Clusters", 
+                               [s for cluster in valid_clusters for s in cluster])
+    else:
+        print("[WARNING] All clusters are empty")
+
     print("[STEP] Clustering step completed.")
 
     routing_payload = {
@@ -196,27 +254,49 @@ def debug_pipeline(source_lat, source_lon, dest_lat, dest_lon, filtering_method)
         "charging_time": 30,
         "safety_margin": 15
     }
+
     result = safe_post("/api/optimize_route", routing_payload)
     if not result['success']:
         print("[ERROR] Route optimization failed. Trying default straight route...")
         return
+
     print("[STEP] Route optimization complete.")
 
     route_data = result.get("route", {})
     ev_stations = route_data.get("charging_stops", [])
     between_count = 0
+
     print("[INFO] Final Charging Stations used in route:")
     for stn in ev_stations:
-        name = stn.get("name") or stn.get("station_id")
-        lat = stn['lat']
-        lon = stn['lon']
-        if is_between_route(lat, lon, source_lat, source_lon, dest_lat, dest_lon):
+        name = stn.get("station_name") or stn.get("station_id")
+        coords = stn.get("coordinates", (None, None))
+        lat, lon = coords
+
+        if is_station_near_route(lat, lon, source_lat, source_lon, dest_lat, dest_lon):
             print(f"  - {name} ({lat}, {lon}) ✅")
             between_count += 1
         else:
             print(f"  - {name} ({lat}, {lon}) [OUTLIER ❌]")
+
+    if len(ev_stations) == 0:
+        print("[DEBUG] No charging stations returned in the optimized route — check filtering/clustering or EV specs.")
+    elif between_count == 0:
+        print("[DEBUG] All stations were rejected by is_station_near_route — likely too far from route line. Try increasing max_side_km.")
+    else:
+        print("[DEBUG] Some stations validated successfully as being along the route.")
+
     print(f"[CHECK] Stations between route: {between_count}/{len(ev_stations)}")
 
+    # ✅ NEW BLOCK: Dump stations to JSON file
+    station_file = "charging_stops_debug.json"
+    try:
+        with open(station_file, "w", encoding="utf-8") as f:
+            json.dump(ev_stations, f, indent=2)
+        print(f"[DEBUG] Charging stops exported to: {station_file}")
+    except Exception as e:
+        print(f"[ERROR] Failed to write {station_file}: {e}")
+
+    # === Map Generation ===
     result = safe_post("/api/generate_map", {
         "source_lat": source_lat,
         "source_lon": source_lon,
@@ -234,6 +314,7 @@ def debug_pipeline(source_lat, source_lon, dest_lat, dest_lon, filtering_method)
         print("[WARNING] Map generation failed.")
     print("[STEP] Map generation complete.")
 
+    # === Route Data Export ===
     result = safe_get("/api/export_route")
     if result['success']:
         filename = result.get("filename", "route_data.json")
@@ -242,7 +323,6 @@ def debug_pipeline(source_lat, source_lon, dest_lat, dest_lon, filtering_method)
             json.dump(route_data, f, indent=2)
         print(f"[INFO] Exported route data to {filename}")
     print("[STEP] Export step finished.")
-
     print("========== EV Routing Full Debug Complete ==========")
 
 if __name__ == "__main__":

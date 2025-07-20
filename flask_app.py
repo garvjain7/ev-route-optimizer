@@ -12,6 +12,7 @@ from plotly.utils import PlotlyJSONEncoder
 import io
 import base64
 from dotenv import load_dotenv
+import inspect
 
 # Import our ML components
 from database.db_connection import DatabaseConnection
@@ -152,20 +153,40 @@ def apply_filtering():
     global stations_data, filtered_stations
     if stations_data is None:
         return jsonify({'success': False, 'error': 'No data loaded'})
-    
+
     try:
         data = request.get_json()
         source_coords = (data['source_lat'], data['source_lon'])
         dest_coords = (data['dest_lat'], data['dest_lon'])
         filtering_method = data['filtering_method']
-        
-        # Get filtering parameters
         params = data.get('params', {})
-        
+
         station_filters = StationFilters()
-        
+
+        # Custom mappings for function references
+        method_map = {
+            "Smart ML Filtering": station_filters.smart_filtering,
+            "ML-Based Filtering": station_filters.ml_based_filtering,
+            "Geographic Bounding Box": station_filters.geographic_bounding_box,
+            "Distance-Based": station_filters.distance_based_filtering,
+            "Corridor-Based": station_filters.corridor_based_filtering,
+            "Combined": station_filters.combined_filtering
+        }
+
+        if filtering_method not in method_map:
+            return jsonify({'success': False, 'error': f'Unknown filtering method: {filtering_method}'})
+
+        func = method_map[filtering_method]
+
+        # Build kwargs dynamically
+        kwargs = {
+            "stations_df": stations_data,
+            "source_coords": source_coords,
+            "dest_coords": dest_coords
+        }
+
         if filtering_method == "Smart ML Filtering":
-            user_preferences = {
+            kwargs["user_preferences"] = {
                 'prefer_fast_charging': params.get('prefer_fast_charging', True),
                 'max_detour_factor': params.get('detour_factor', 1.5),
                 'corridor_width': params.get('corridor_width', 25),
@@ -174,68 +195,96 @@ def apply_filtering():
                 'charging_types': params.get('charging_types', ['AC', 'DC']),
                 'power_levels': params.get('power_levels', ['Level2', 'DC_Fast'])
             }
-            filtered_stations = station_filters.smart_filtering(
-                stations_data, source_coords, dest_coords, user_preferences=user_preferences
-            )
         elif filtering_method == "ML-Based Filtering":
-            filter_criteria = {
+            kwargs["filter_criteria"] = {
                 'min_rating': params.get('min_station_rating', 3.0),
                 'max_congestion': 1 if params.get('avoid_congestion', True) else 2,
                 'prefer_fast_charging': params.get('prefer_fast_charging', True),
                 'min_station_score': params.get('min_station_rating', 3.0)
             }
-            filtered_stations = station_filters.ml_based_filtering(
-                stations_data, source_coords, dest_coords, filter_criteria
-            )
-        elif filtering_method == "Geographic Bounding Box":
-            filtered_stations = station_filters.geographic_bounding_box(
-                stations_data, source_coords, dest_coords
-            )
-        elif filtering_method == "Distance-Based":
-            filtered_stations = station_filters.distance_based_filtering(
-                stations_data, source_coords, dest_coords,
-                params.get('detour_factor', 1.5),
-                params.get('max_distance_source', 200),
-                params.get('max_distance_dest', 200)
-            )
-        elif filtering_method == "Corridor-Based":
-            filtered_stations = station_filters.corridor_based_filtering(
-                stations_data, source_coords, dest_coords, params.get('corridor_width', 25)
-            )
-        else:  # Combined Approach
-            filtered_stations = station_filters.combined_filtering(
-                stations_data, source_coords, dest_coords,
-                params.get('detour_factor', 1.5),
-                params.get('corridor_width', 25),
-                params.get('max_distance_source', 200),
-                params.get('max_distance_dest', 200)
-            )
-        
+        else:
+            # Dynamically inject only matching parameters for non-ML methods
+            sig = inspect.signature(func)
+            for key in sig.parameters:
+                if key not in kwargs and key in params:
+                    kwargs[key] = params[key]
+
+        # Call the filtering function with only valid arguments
+        filtered_stations = func(**kwargs)
+
         if filtered_stations is not None:
-            # Calculate ML prediction summary
             ml_summary = {}
             if 'predicted_congestion' in filtered_stations.columns:
                 congestion_labels = {0: 'Low', 1: 'Medium', 2: 'High'}
                 avg_congestion = filtered_stations['predicted_congestion'].mean()
                 ml_summary['avg_congestion'] = congestion_labels.get(round(avg_congestion), 'Unknown')
-            
+
             if 'predicted_rating' in filtered_stations.columns:
                 ml_summary['avg_rating'] = round(filtered_stations['predicted_rating'].mean(), 1)
-            
+
             if 'ml_station_score' in filtered_stations.columns:
                 ml_summary['avg_score'] = round(filtered_stations['ml_station_score'].mean(), 1)
-            
+
             return jsonify({
                 'success': True,
                 'message': f'Filtered to {len(filtered_stations)} stations',
                 'filtered_count': len(filtered_stations),
                 'ml_summary': ml_summary
             })
-        else:
-            return jsonify({'success': False, 'error': 'No stations found with current filters'})
-    
+
+        return jsonify({'success': False, 'error': 'No stations found with current filters'})
+
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
+
+# @app.route('/api/perform_clustering', methods=['POST'])
+# def perform_clustering():
+#     global filtered_stations, clustered_stations
+
+#     if filtered_stations is None or filtered_stations.empty:
+#         return jsonify({'success': False, 'error': 'No filtered stations available'}), 400
+
+#     try:
+#         data = request.get_json() or {}
+
+#         user_clusters = data.get('n_clusters', None)
+#         apply_additional_filters = data.get('apply_additional_filters', False)
+
+#         print(f"[DEBUG] perform_clustering called with user_clusters={user_clusters}, apply_additional_filters={apply_additional_filters}")
+
+#         clustering_engine = ClusteringEngine()
+
+#         try:
+#             clustered_result = clustering_engine.cluster_stations(
+#                 filtered_stations,
+#                 # n_clusters=user_clusters,
+#                 requested_clusters=user_clusters,
+#                 # apply_additional_filters=apply_additional_filters
+#                 include_features = apply_additional_filters
+#             )
+#         except Exception as ce:
+#             print(f"[DEBUG] ClusteringEngine.cluster_stations() threw: {ce}")
+#             return jsonify({'success': False, 'error': 'ClusteringEngine crashed: ' + str(ce)}), 500
+
+#         print(f"[DEBUG] clustered_result = {clustered_result}")
+
+#         if clustered_result is None:
+#             return jsonify({'success': False, 'error': 'Clustering engine returned None'}), 500
+
+#         clustered_stations = clustered_result['stations']
+
+#         return jsonify({
+#             'success': True,
+#             'message': f'Created {clustered_result.get("actual_n_clusters", "unknown")} clusters',
+#             'n_clusters': clustered_result.get('actual_n_clusters'),
+#             'cluster_stats': clustered_result.get('statistics', {}),
+#             'centroids': clustered_result.get('centroids', {}),
+#             'summary': clustering_engine.get_cluster_summary(clustered_result)
+#         })
+
+#     except Exception as e:
+#         print(f"[ERROR] perform_clustering failed: {str(e)}")
+#         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/perform_clustering', methods=['POST'])
 def perform_clustering():
@@ -245,26 +294,50 @@ def perform_clustering():
         return jsonify({'success': False, 'error': 'No filtered stations available'}), 400
 
     try:
-        data = request.get_json()
-        n_clusters = int(data.get('n_clusters', 8))
+        data = request.get_json() or {}
 
-        print(f"[DEBUG] Performing clustering with {n_clusters} clusters on {len(filtered_stations)} stations")
+        user_clusters = data.get('n_clusters', None)
+        print(f"[DEBUG] perform_clustering called with user_clusters={user_clusters}")
 
         clustering_engine = ClusteringEngine()
-        clustered_result = clustering_engine.cluster_stations(filtered_stations, n_clusters)
+
+        try:
+            clustered_result, actual_clusters = clustering_engine.cluster_stations(
+                filtered_stations,
+                requested_clusters=user_clusters
+            )
+        except Exception as ce:
+            print(f"[DEBUG] ClusteringEngine.cluster_stations() threw: {ce}")
+            return jsonify({'success': False, 'error': 'ClusteringEngine crashed: ' + str(ce)}), 500
+
+        print(f"[DEBUG] clustered_result = {clustered_result}")
 
         if clustered_result is None:
             return jsonify({'success': False, 'error': 'Clustering engine returned None'}), 500
+        
+        def convert_numpy(obj):
+            """Recursively convert NumPy data types to native Python types."""
+            if isinstance(obj, dict):
+                return {convert_numpy(k): convert_numpy(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [convert_numpy(i) for i in obj]
+            elif isinstance(obj, np.integer):
+                return int(obj)
+            elif isinstance(obj, np.floating):
+                return float(obj)
+            else:
+                return obj
 
         clustered_stations = clustered_result['stations']
 
         return jsonify({
             'success': True,
-            'message': f'Created {n_clusters} clusters',
-            'n_clusters': n_clusters,
-            'cluster_stats': clustered_result.get('statistics', {}),
-            'centroids': clustered_result.get('centroids', {}),
-            'summary': clustering_engine.get_cluster_summary(clustered_result)
+            'message': f'Created {actual_clusters} clusters',
+            'n_clusters': actual_clusters,
+            'cluster_stats': convert_numpy(clustered_result.get('statistics', {})),
+            'centroids': convert_numpy(clustered_result.get('centroids', {})),
+            'summary': convert_numpy(clustering_engine.get_cluster_summary(clustered_result)),
+            'clusters': clustered_result.get('clusters', [])
         })
 
     except Exception as e:
@@ -273,24 +346,34 @@ def perform_clustering():
 
 @app.route('/api/optimize_route', methods=['POST'])
 def optimize_route():
-    global filtered_stations, route_data
+    global filtered_stations, clustered_stations, route_data
 
-    if filtered_stations is None or filtered_stations.empty:
-        return jsonify({'success': False, 'error': 'No filtered stations available'}), 400
+    # Use clustered stations if available, fallback to filtered
+    stations_to_use = clustered_stations if clustered_stations is not None and not getattr(clustered_stations, 'empty', True) else filtered_stations
+
+    import pandas as pd
+    # Convert to DataFrame if needed
+    if isinstance(stations_to_use, list):
+        stations_to_use = pd.DataFrame(stations_to_use)
+    print("[DEBUG] stations_to_use type:", type(stations_to_use))
+    print("[DEBUG] stations_to_use shape:", stations_to_use.shape if hasattr(stations_to_use, 'shape') else 'N/A')
+    print("[DEBUG] stations_to_use columns:", stations_to_use.columns if hasattr(stations_to_use, 'columns') else 'N/A')
+
+    if stations_to_use is None or len(stations_to_use) == 0:
+        return jsonify({'success': False, 'error': 'No filtered or clustered stations available'}), 400
+    if not {'latitude', 'longitude'}.issubset(stations_to_use.columns):
+        return jsonify({'success': False, 'error': 'Stations missing latitude/longitude columns'}), 400
 
     try:
         data = request.get_json()
 
-        # Validate input
         required_fields = ['source_lat', 'source_lon', 'dest_lat', 'dest_lon']
         if not all(k in data for k in required_fields):
             return jsonify({'success': False, 'error': 'Missing required coordinates'}), 400
 
-        # Parse coordinates
         source_coords = (float(data['source_lat']), float(data['source_lon']))
         dest_coords = (float(data['dest_lat']), float(data['dest_lon']))
 
-        # EV specifications with defaults
         ev_specs = {
             'battery_range': float(data.get('battery_range', 300)),
             'consumption_rate': float(data.get('consumption_rate', 20)),
@@ -298,13 +381,12 @@ def optimize_route():
             'safety_margin': float(data.get('safety_margin', 15))
         }
 
-        # Initialize router
         ev_router = EVRouter()
 
         print(f"[DEBUG] Optimizing route from {source_coords} to {dest_coords}")
-        print(f"[DEBUG] Stations available: {len(filtered_stations)}")
+        print(f"[DEBUG] Stations available for routing: {len(stations_to_use)}")
 
-        route_result = ev_router.optimize_route(source_coords, dest_coords, filtered_stations, ev_specs)
+        route_result = ev_router.optimize_route(source_coords, dest_coords, stations_to_use, ev_specs)
 
         if route_result is None:
             return jsonify({'success': False, 'error': 'Route optimization failed'}), 500
@@ -328,26 +410,50 @@ def optimize_route():
         
 @app.route('/api/generate_map', methods=['POST'])
 def generate_map():
-    global filtered_stations, route_data
+    global filtered_stations, clustered_stations, route_data
+
     try:
         data = request.get_json()
         source_coords = (data['source_lat'], data['source_lon'])
         dest_coords = (data['dest_lat'], data['dest_lon'])
-        
+
+        # Decide which station set to use: clustered or filtered
+        stations_to_use = None
+
+        if clustered_stations is not None:
+            if isinstance(clustered_stations, pd.DataFrame):
+                if not clustered_stations.empty:
+                    stations_to_use = clustered_stations
+            elif isinstance(clustered_stations, list):
+                if len(clustered_stations) > 0:
+                    stations_to_use = pd.DataFrame(clustered_stations)
+
+        if stations_to_use is None:
+            print("[WARNING] clustered_stations is empty or not set, falling back to filtered_stations")
+            stations_to_use = filtered_stations
+        else:
+            print(f"[DEBUG] Using clustered_stations with {len(stations_to_use)} entries")
+
+        # Create map
         map_visualizer = MapVisualizer()
         map_obj = map_visualizer.create_route_map(
-            source_coords, dest_coords, filtered_stations, route_data
+            source_coords,
+            dest_coords,
+            stations_df=stations_to_use,
+            route_data=route_data
         )
-        
-        # Convert map to HTML
+
         map_html = map_obj._repr_html_()
-        
+
         return jsonify({
             'success': True,
             'map_html': map_html
         })
+
     except Exception as e:
+        print(f"[ERROR] generate_map failed: {str(e)}")
         return jsonify({'success': False, 'error': str(e)})
+
 
 @app.route('/api/export_geojson', methods=['GET'])
 def export_geojson():

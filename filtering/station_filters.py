@@ -638,7 +638,18 @@ class StationFilters:
             stations_df_copy['corridor_distance'] = stations_df_copy.apply(
                 lambda row: self._point_to_line_distance(
                     (row['latitude'], row['longitude']), source_coords, dest_coords
-                ),
+                ), axis=1
+            )
+
+            # Midpoint of route
+            midpoint = (
+                (source_coords[0] + dest_coords[0]) / 2,
+                (source_coords[1] + dest_coords[1]) / 2
+            )
+
+            # Add midpoint distance
+            stations_df_copy['midpoint_distance'] = stations_df_copy.apply(
+                lambda row: geodesic((row['latitude'], row['longitude']), midpoint).kilometers,
                 axis=1
             )
             
@@ -647,43 +658,56 @@ class StationFilters:
                 stations_df_copy['corridor_distance'] <= corridor_width
             ].copy()
             
-            if len(filtered_stations) == 0:
-                print(f"No stations found within corridor width of {corridor_width} km, expanding")
-                # Expand corridor width progressively
-                expanded_width = corridor_width * 1.5
-                filtered_stations = stations_df_copy[
-                    stations_df_copy['corridor_distance'] <= expanded_width
-                ].copy()
+            # if len(filtered_stations) == 0:
+            #     print(f"No stations found within corridor width of {corridor_width} km, expanding")
+            #     # Expand corridor width progressively
+            #     expanded_width = corridor_width * 1.5
+            #     filtered_stations = stations_df_copy[
+            #         stations_df_copy['corridor_distance'] <= expanded_width
+            #     ].copy()
                 
-                if len(filtered_stations) == 0:
-                    print("Corridor too narrow, returning closest stations to route")
-                    # Return stations closest to the route
+            #     if len(filtered_stations) == 0:
+            #         print("Corridor too narrow, returning closest stations to route")
+            #         # Return stations closest to the route
+            #         return stations_df_copy.nsmallest(15, 'corridor_distance')
+
+            if filtered.empty:
+            # Retry with wider corridor
+                expanded_width = corridor_width * 1.5
+                filtered = stations_df_copy[stations_df_copy['corridor_distance'] <= expanded_width].copy()
+
+                if filtered.empty:
+                    print("Returning top 15 closest-to-route stations (fallback)")
                     return stations_df_copy.nsmallest(15, 'corridor_distance')
             
             # Calculate distances from source and destination
-            filtered_stations['distance_from_source'] = filtered_stations.apply(
+            filtered['distance_from_source'] = filtered.apply(
                 lambda row: geodesic(source_coords, (row['latitude'], row['longitude'])).kilometers,
                 axis=1
             )
-            
-            filtered_stations['distance_from_dest'] = filtered_stations.apply(
+
+            filtered['distance_from_dest'] = filtered.apply(
                 lambda row: geodesic(dest_coords, (row['latitude'], row['longitude'])).kilometers,
                 axis=1
             )
-            
-            # Calculate progress along route (0 = at source, 1 = at destination)
-            filtered_stations['route_progress'] = filtered_stations.apply(
+
+            # Calculate route progress (0=start, 1=end)
+            filtered['route_progress'] = filtered.apply(
                 lambda row: self._calculate_route_progress(
                     (row['latitude'], row['longitude']), source_coords, dest_coords
-                ),
-                axis=1
+                ), axis=1
             )
             
-            # Sort by route progress (stations appear in order along the route)
-            filtered_stations = filtered_stations.sort_values('route_progress')
-            
-            return filtered_stations
-        
+            # Score stations by proximity to midpoint and centrality along route
+            filtered['midpoint_score'] = filtered['midpoint_distance'] + abs(filtered['route_progress'] - 0.5)
+
+            # Final sort: prioritize midpoint + spread along route
+            filtered = filtered.sort_values(by='midpoint_score')
+
+            # Select ~10 best stations for display/clustering
+            top_stations = filtered.head(15).reset_index(drop=True)
+            return top_stations
+
         except Exception as e:
             print(f"Corridor-based filtering failed: {str(e)}")
             return None

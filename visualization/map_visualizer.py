@@ -19,7 +19,13 @@ class MapVisualizer:
             'cluster_6': 'lightgreen',
             'cluster_7': 'cadetblue',
             'cluster_8': 'darkpurple',
-            'cluster_9': 'lightblue'
+            'cluster_9': 'lightblue',
+            'cluster_10': 'pink',
+            'cluster_11': 'black',
+            'cluster_12': 'lightgray',
+            'cluster_13': 'white',
+            'cluster_14': 'darkred',
+            'cluster_15': 'lightorange'
         }
     
     def create_route_map(self, source_coords, dest_coords, stations_df=None, route_data=None):
